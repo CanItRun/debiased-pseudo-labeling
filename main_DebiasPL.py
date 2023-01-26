@@ -1,3 +1,4 @@
+import json
 import argparse
 import builtins
 import math
@@ -7,7 +8,7 @@ import time
 import warnings
 import numpy as np
 import pandas as pd
-
+from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -20,15 +21,19 @@ import torch.utils.data
 import torch.utils.data.distributed
 from torch.utils.data import DataLoader, RandomSampler
 from torch.utils.data.distributed import DistributedSampler
-
+from lumo import DatasetBuilder
 import data.datasets as datasets
+from torchvision.datasets.folder import ImageFolder, default_loader
 import backbone as backbone_models
 from models import get_fixmatch_model
 from utils import utils, lr_schedule, get_norm, dist_utils
 import data.transforms as data_transforms
 from engine import validate
 from torch.utils.tensorboard import SummaryWriter
+from lumo import Logger
 
+logger = Logger()
+print = logger.info
 try:
     # noinspection PyUnresolvedReferences
     from apex import amp
@@ -236,7 +241,8 @@ def CLDLoss(prob_s, prob_w, mask=None, weights=None):
 def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
     args.gpu = gpu
-
+    if len(logger.out_channel) == 0:
+        logger.add_log_dir('./logs')
     # suppress printing if not master
     if args.multiprocessing_distributed and args.gpu != 0:
         def print_pass(*args):
@@ -269,7 +275,7 @@ def main_worker(gpu, ngpus_per_node, args):
     )
     print(model)
     print("Total params: {:.2f}M".format(sum(p.numel() for p in model.parameters())/1e6))
-
+    
     if args.self_pretrained:
         if os.path.isfile(args.self_pretrained):
             print("=> loading checkpoint '{}'".format(args.self_pretrained))
@@ -329,7 +335,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
     torch.cuda.set_device(args.gpu)
     model.cuda(args.gpu)
-    if args.amp_opt_level != "O0":
+    if args.amp_opt_level != "O0" and amp is not None:
         model, optimizer = amp.initialize(model, optimizer, opt_level=args.amp_opt_level)
 
     if args.distributed:
@@ -416,7 +422,10 @@ def main_worker(gpu, ngpus_per_node, args):
         train_dataset_x, train_dataset_u, val_dataset = get_imagenet_ssl(
             args.data, trainindex_x, trainindex_u,
             weak_type=args.weak_type, strong_type=args.strong_type, 
-            multiviews=args.multiviews)
+            multiviews=args.multiviews
+        )
+        
+        
     else:
         print("random sampling {} percent of data".format(args.anno_percent * 100))
         train_dataset_x, train_dataset_u, val_dataset = get_imagenet_ssl_random(
@@ -535,9 +544,9 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
 
     end = time.time()
     # for i, (images_u, targets_u) in enumerate(train_loader_u):
-    for i, (images_u, targets_u, indexs_u) in enumerate(train_loader_u):
+    for i, unsup in enumerate(train_loader_u):
         try:
-            images_x, targets_x, _ = next(train_iter_x)
+            sup = next(train_iter_x)
         except Exception:
             epoch_x += 1
             print("reshuffle train_loader_x at epoch={}".format(epoch_x))
@@ -545,8 +554,10 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
                 print("set epoch={} for labeled sampler".format(epoch_x))
                 train_loader_x.sampler.set_epoch(epoch_x)
             train_iter_x = iter(train_loader_x)
-            images_x, targets_x, _ = next(train_iter_x)
-
+            sup = next(train_iter_x)
+            
+        images_x, targets_x = sup['xs'], sup['ys']
+        (images_u, targets_u, indexs_u) = unsup['xs'],unsup['ys'],unsup['id']
         # prepare data and targets
         if args.multiviews:
             images_u_w, images_u_w2, images_u_s, images_u_s2 = images_u
@@ -565,7 +576,7 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
 
         targets_x = targets_x.cuda(args.gpu, non_blocking=True)
         targets_u = targets_u.cuda(args.gpu, non_blocking=True)
-
+        
         # warmup learning rate
         if epoch < args.warmup_epoch:
             warmup_step = args.warmup_epoch * len(train_loader_u)
@@ -695,7 +706,7 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
 
         if i % args.print_freq == 0:
             progress.display(i)
-
+        
     if args.rank in [-1, 0]:
         writer.add_scalar('train/1.train_loss', losses.avg, epoch)
         writer.add_scalar('train/2.train_loss_x', losses_x.avg, epoch)
@@ -708,9 +719,81 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
     return qhat
 
 
+
+def imagenet(split='train'):
+    """
+    download from https://www.kaggle.com/c/imagenet-object-localization-challenge/overview/description
+    ```
+    mkdir imagenet
+    cd ./imagenet
+    kaggle competitions download -c imagenet-object-localization-challenge
+    unzip imagenet-object-localization-challenge.zip
+    tar -xvf imagenet_object_localization_patched2019.tar.gz
+    ls
+    >>> ILSVRC LOC_synset_mapping.txt  LOC_val_solution.csv imagenet_object_localization_patched2019.tar.gz
+    >>> LOC_sample_submission.csv  LOC_train_solution.csv  imagenet-object-localization-challenge.zip
+    ```
+    """
+    root = '/root/autodl-tmp/imagenet'
+    
+    with open('imagenet-hc.json') as r:
+        imagenet_hc = json.load(r)
+        mapping = imagenet_hc['mapping']
+        selection = set(imagenet_hc['selection'])
+    
+    hname_cls_map = {name:i for i,name in enumerate(sorted(set([mapping[k] for k in selection])))}
+    # hname_cls_map = {name:i for i,name in enumerate(sorted(set(mapping.values())))}
+    print(max(hname_cls_map.values()))
+    if split == 'train':
+        file = Path(root).joinpath('train_cls.txt')
+        train_root = os.path.join(root, 'train')
+        with file.open('r') as r:
+            lines = r.readlines()
+            imgs = [line.split(' ')[0] for line in lines]
+            imgs = [i for i in imgs if i.split('/')[0] in selection]
+            
+            name_cls_map = {name: i for i, name in enumerate(sorted(set([i.split('/')[0] for i in imgs])))}
+
+            xs = [os.path.join(train_root, f'{i}.JPEG') for i in imgs]
+            ys = [name_cls_map[i.split('/')[0]] for i in imgs]
+            cys = [hname_cls_map[mapping[i.split('/')[0]]] for i in imgs]
+            # mask = [idx for idx,i in enumerate(imgs) if i.split('/')[0] in selection] 
+            
+    else:
+        file = Path(root).joinpath('LOC_val_solution.csv')
+        val_root = os.path.join(root, 'val')
+
+        with file.open('r') as r:
+            r.readline()
+            lines = r.readlines()
+            lines = [line.split(',') for line in lines]
+            lines = [[img, res.split(' ')[0]] for img, res in lines]
+            lines = [i for i in lines if i[1] in selection]
+
+            name_cls_map = {name: i for i, name in enumerate(sorted(set([i[1] for i in lines])))}
+            
+            xs = [os.path.join(val_root, f'{img}.JPEG') for img, _ in lines]
+            ys = [name_cls_map[res] for _, res in lines]
+            cys = [hname_cls_map[mapping[res]] for _, res in lines]
+
+            # mask = [idx for idx,(_, i) in enumerate(lines) if i in selection] 
+            
+    # xs = [xs[i] for i in mask]
+    # ys = [ys[i] for i in mask]
+    # cys = [cys[i] for i in mask]
+    print(len(xs),f'split={split}')
+    return list(xs), list(ys), list(cys)
+
+
+
 def get_imagenet_ssl(image_root, trainindex_x, trainindex_u,
                      train_type='DefaultTrain', val_type='DefaultVal', weak_type='DefaultTrain',
                      strong_type='RandAugment', multiviews=False):
+    
+    xs,ys,_ = imagenet('train')
+    exs,eys,_ = imagenet('val')
+
+
     traindir = os.path.join(image_root, 'train')
     valdir = os.path.join(image_root, 'val')
     transform_x = data_transforms.get_transforms(train_type)
@@ -730,9 +813,37 @@ def get_imagenet_ssl(image_root, trainindex_x, trainindex_u,
     train_dataset_u = datasets.ImageFolderWithIndex(
         traindir, trainindex_u, transform=transform_u)
 
-    val_dataset = datasets.ImageFolder(
-        valdir, transform=transform_val)
+    
+    train_dataset_x = (
+        DatasetBuilder()
+            .add_idx('id')
+            .add_input('xs', xs,transform=default_loader)
+            .add_input('ys', ys)
+            .add_output('xs', 'xs',transform_x)
+            .add_output('ys', 'ys')
+    )
 
+    train_dataset_u = (
+        DatasetBuilder()
+            .add_idx('id')
+            .add_input('xs', xs,transform=default_loader)
+            .add_input('ys', ys)
+            .add_output('xs', 'xs',transform_u)
+            .add_output('ys', 'ys')
+    )
+    
+    val_dataset = (
+        DatasetBuilder()
+            .add_idx('id')
+            .add_input('xs', exs,transform=default_loader)
+            .add_input('ys', eys)
+            .add_output('xs', 'xs', transform_val)
+            .add_output('ys', 'ys')
+    )
+    annotation = json.load(open('annotation_1percent.json','r'))
+    train_dataset_x.subset(annotation['labeled_samples']*10)
+    train_dataset_u.subset(annotation['unlabeled_samples'])
+    print('dataset size',len(train_dataset_x),len(train_dataset_u),len(val_dataset))
     return train_dataset_x, train_dataset_u, val_dataset
 
 
@@ -780,6 +891,7 @@ def get_imagenet_ssl_random(image_root, percent, train_type='DefaultTrain',
 
     val_dataset = datasets.ImageFolder(
         valdir, transform=transform_val)
+    
 
     return train_dataset_x, train_dataset_u, val_dataset
 

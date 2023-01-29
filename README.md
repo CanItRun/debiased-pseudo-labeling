@@ -53,6 +53,8 @@ If you find our work inspiring or use our codebase in your research, please cons
 ### Hardware requirements
 8 GPUs with >= 11G GPU RAM or 4 GPUs with >= 16G GPU RAM are recommended.
 
+> 5 卡 2080 开 amp 也能跑下来，单卡耗费 7G 显存。
+
 ## Dataset and Pre-trained Model Preparation
 Please download pre-trained [MoCo-EMAN model](https://eman-cvpr.s3.amazonaws.com/models/res50_moco_eman_800ep.pth.tar), make a new folder called pretrained and place checkpoints under it. Please download the ImageNet dataset from [this link](http://www.image-net.org/). Then, move and extract the training and validation images to labeled subfolders, using the following [shell script](https://github.com/pytorch/examples/blob/main/imagenet/extract_ILSVRC.sh). 
 The indexes for semi-supervised learning experiments can be found at [here](https://drive.google.com/drive/folders/18fi_lxZQK_J_E9Uam0c9G1VCfnKYyhmF?usp=sharing). The setting with 1% labeled data is the same as FixMatch. A new list of indexes is made for the setting with 0.2% labeled data by randomly selecting 0.2% of instances from each class. Please put all CSV files in the same location as below:
@@ -120,3 +122,7 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for more 
 
 ## Acknowledgements
 Part of the code is based on [EMAN](https://github.com/amazon-research/exponential-moving-average-normalization), [FixMatch](https://github.com/kekmodel/FixMatch-pytorch), [CLIP](https://github.com/openai/CLIP), [CLD](https://github.com/frank-xwang/CLD-UnsupervisedLearning), and [LA](https://github.com/google-research/google-research/tree/master/logit_adjustment).
+
+
+2.6 学校
+2.12 学生返校

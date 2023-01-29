@@ -424,8 +424,6 @@ def main_worker(gpu, ngpus_per_node, args):
             weak_type=args.weak_type, strong_type=args.strong_type, 
             multiviews=args.multiviews
         )
-        
-        
     else:
         print("random sampling {} percent of data".format(args.anno_percent * 100))
         train_dataset_x, train_dataset_u, val_dataset = get_imagenet_ssl_random(
@@ -743,7 +741,8 @@ def imagenet(split='train'):
     
     hname_cls_map = {name:i for i,name in enumerate(sorted(set([mapping[k] for k in selection])))}
     # hname_cls_map = {name:i for i,name in enumerate(sorted(set(mapping.values())))}
-    print(max(hname_cls_map.values()))
+    # print()
+    # print(max(hname_cls_map.values()))
     if split == 'train':
         file = Path(root).joinpath('train_cls.txt')
         train_root = os.path.join(root, 'train')
@@ -757,7 +756,7 @@ def imagenet(split='train'):
             xs = [os.path.join(train_root, f'{i}.JPEG') for i in imgs]
             ys = [name_cls_map[i.split('/')[0]] for i in imgs]
             cys = [hname_cls_map[mapping[i.split('/')[0]]] for i in imgs]
-            # mask = [idx for idx,i in enumerate(imgs) if i.split('/')[0] in selection] 
+            mask = [idx for idx,i in enumerate(imgs) if i.split('/')[0] in selection] 
             
     else:
         file = Path(root).joinpath('LOC_val_solution.csv')
@@ -776,11 +775,11 @@ def imagenet(split='train'):
             ys = [name_cls_map[res] for _, res in lines]
             cys = [hname_cls_map[mapping[res]] for _, res in lines]
 
-            # mask = [idx for idx,(_, i) in enumerate(lines) if i in selection] 
+            mask = [idx for idx,(_, i) in enumerate(lines) if i in selection] 
             
-    # xs = [xs[i] for i in mask]
-    # ys = [ys[i] for i in mask]
-    # cys = [cys[i] for i in mask]
+    xs = [xs[i] for i in mask]
+    ys = [ys[i] for i in mask]
+    cys = [cys[i] for i in mask]
     print(len(xs),f'split={split}')
     return list(xs), list(ys), list(cys)
 
@@ -840,6 +839,7 @@ def get_imagenet_ssl(image_root, trainindex_x, trainindex_u,
             .add_output('xs', 'xs', transform_val)
             .add_output('ys', 'ys')
     )
+    print('check train & val overlap:',set(eys)-set(ys))
     annotation = json.load(open('annotation_1percent.json','r'))
     train_dataset_x.subset(annotation['labeled_samples']*10)
     train_dataset_u.subset(annotation['unlabeled_samples'])

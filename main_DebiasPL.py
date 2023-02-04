@@ -41,8 +41,8 @@ except ImportError:
     amp = None
 
 backbone_model_names = sorted(name for name in backbone_models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(backbone_models.__dict__[name]))
+                              if name.islower() and not name.startswith("__")
+                              and callable(backbone_models.__dict__[name]))
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('data', metavar='DIR',
@@ -56,8 +56,8 @@ parser.add_argument('--arch', metavar='ARCH', default='FixMatch',
 parser.add_argument('--backbone', default='resnet50_encoder',
                     choices=backbone_model_names,
                     help='model architecture: ' +
-                        ' | '.join(backbone_model_names) +
-                        ' (default: resnet50_encoder)')
+                         ' | '.join(backbone_model_names) +
+                         ' (default: resnet50_encoder)')
 parser.add_argument('--cls', default=1000, type=int, metavar='N',
                     help='number of classes')
 parser.add_argument('-j', '--workers', default=32, type=int, metavar='N',
@@ -198,24 +198,28 @@ def main():
         # Simply call main_worker function
         main_worker(args.gpu, ngpus_per_node, args)
 
+
 def causal_inference(current_logit, qhat, exp_idx, tau=0.5):
     # de-bias pseudo-labels
-    debiased_prob = F.softmax(current_logit - tau*torch.log(qhat), dim=1)
+    debiased_prob = F.softmax(current_logit - tau * torch.log(qhat), dim=1)
     return debiased_prob
+
 
 def initial_qhat(class_num=1000):
     # initialize qhat of predictions (probability)
-    qhat = (torch.ones([1, class_num], dtype=torch.float)/class_num).cuda()
+    qhat = (torch.ones([1, class_num], dtype=torch.float) / class_num).cuda()
     print("qhat size: ".format(qhat.size()))
     return qhat
 
+
 def update_qhat(probs, qhat, momentum, qhat_mask=None):
     if qhat_mask is not None:
-        mean_prob = probs.detach()*qhat_mask.detach().unsqueeze(dim=-1)
+        mean_prob = probs.detach() * qhat_mask.detach().unsqueeze(dim=-1)
     else:
         mean_prob = probs.detach().mean(dim=0)
     qhat = momentum * qhat + (1 - momentum) * mean_prob
     return qhat
+
 
 def get_centroids(prob):
     N, D = prob.shape
@@ -223,11 +227,12 @@ def get_centroids(prob):
     cl = prob.argmin(dim=1).long().view(-1)  # -> class index
     Ncl = cl.view(cl.size(0), 1).expand(-1, D)
     unique_labels, labels_count = Ncl.unique(dim=0, return_counts=True)
-    labels_count_all = torch.ones([K]).long().cuda() # -> counts of each class
-    labels_count_all[unique_labels[:,0]] = labels_count
-    c = torch.zeros([K, D], dtype=prob.dtype).cuda().scatter_add_(0, Ncl, prob) # -> class centroids
+    labels_count_all = torch.ones([K]).long().cuda()  # -> counts of each class
+    labels_count_all[unique_labels[:, 0]] = labels_count
+    c = torch.zeros([K, D], dtype=prob.dtype).cuda().scatter_add_(0, Ncl, prob)  # -> class centroids
     c = c / labels_count_all.float().unsqueeze(1)
     return cl, c
+
 
 def CLDLoss(prob_s, prob_w, mask=None, weights=None):
     cl_w, c_w = get_centroids(prob_w)
@@ -237,6 +242,7 @@ def CLDLoss(prob_s, prob_w, mask=None, weights=None):
     else:
         loss = (F.cross_entropy(affnity_s2w.div(0.07), cl_w, reduction='none', weight=weights) * (1 - mask)).mean()
     return loss
+
 
 def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
@@ -274,8 +280,8 @@ def main_worker(gpu, ngpus_per_node, args):
         norm=norm
     )
     print(model)
-    print("Total params: {:.2f}M".format(sum(p.numel() for p in model.parameters())/1e6))
-    
+    print("Total params: {:.2f}M".format(sum(p.numel() for p in model.parameters()) / 1e6))
+
     if args.self_pretrained:
         if os.path.isfile(args.self_pretrained):
             print("=> loading checkpoint '{}'".format(args.self_pretrained))
@@ -398,7 +404,7 @@ def main_worker(gpu, ngpus_per_node, args):
         now = datetime.now()
         # dd/mm/YY H:M:S
         dt_string = now.strftime("%m-%d-%Y-%H:%M")
-        print("date and time =", dt_string)	
+        print("date and time =", dt_string)
         args.output = args.output + "-" + dt_string
 
     if args.rank in [-1, 0]:
@@ -421,13 +427,15 @@ def main_worker(gpu, ngpus_per_node, args):
         trainindex_u = index_info_u['Index'].tolist()
         train_dataset_x, train_dataset_u, val_dataset = get_imagenet_ssl(
             args.data, trainindex_x, trainindex_u,
-            weak_type=args.weak_type, strong_type=args.strong_type, 
+            weak_type=args.weak_type, strong_type=args.strong_type,
             multiviews=args.multiviews
         )
+
+
     else:
         print("random sampling {} percent of data".format(args.anno_percent * 100))
         train_dataset_x, train_dataset_u, val_dataset = get_imagenet_ssl_random(
-            args.data, args.anno_percent, weak_type=args.weak_type, strong_type=args.strong_type, 
+            args.data, args.anno_percent, weak_type=args.weak_type, strong_type=args.strong_type,
             multiviews=args.multiviews)
     print("train_dataset_x:\n{}".format(train_dataset_x))
     print("train_dataset_u:\n{}".format(train_dataset_u))
@@ -461,7 +469,8 @@ def main_worker(gpu, ngpus_per_node, args):
     qhat = initial_qhat(class_num=1000)
 
     # load zero-shot predictions from CLIP
-    clip_predictions = torch.load('imagenet/indexes/{}_clip_predictions_ranked.pth.tar'.format(args.trainindex_u.split('.csv')[0])) if args.use_clip else None
+    clip_predictions = torch.load('imagenet/indexes/{}_clip_predictions_ranked.pth.tar'.format(
+        args.trainindex_u.split('.csv')[0])) if args.use_clip else None
     clip_probs_list = clip_predictions['probs_list'].cuda() if args.use_clip else None
     clip_preds_list = clip_predictions['preds_list'].cuda() if args.use_clip else None
 
@@ -471,7 +480,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
         # train for one epoch
         qhat = train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat, writer, \
-            clip_probs_list, clip_preds_list)
+                     clip_probs_list, clip_preds_list)
 
         is_best = False
         if (epoch + 1) % args.eval_freq == 0:
@@ -486,7 +495,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 writer.add_scalar('test/1.test_acc', acc1, epoch)
 
         if not args.multiprocessing_distributed or (args.multiprocessing_distributed
-                and args.rank % ngpus_per_node == 0):
+                                                    and args.rank % ngpus_per_node == 0):
             save_checkpoint({
                 'epoch': epoch + 1,
                 'arch': args.arch,
@@ -520,7 +529,8 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
     curr_lr = utils.InstantMeter('LR', '')
     progress = utils.ProgressMeter(
         len(train_loader_u),
-        [curr_lr, batch_time, data_time, losses, losses_x, losses_u, losses_cld, top1_x, top5_x, top1_u, top5_u, mask_info, ps_vs_gt_correct],
+        [curr_lr, batch_time, data_time, losses, losses_x, losses_u, losses_cld, top1_x, top5_x, top1_u, top5_u,
+         mask_info, ps_vs_gt_correct],
         prefix="Epoch: [{}/{}]\t".format(epoch, args.epochs))
 
     epoch_x = epoch * math.ceil(len(train_loader_u) / len(train_loader_x))
@@ -553,14 +563,16 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
                 train_loader_x.sampler.set_epoch(epoch_x)
             train_iter_x = iter(train_loader_x)
             sup = next(train_iter_x)
-            
+
         images_x, targets_x = sup['xs'], sup['ys']
-        (images_u, targets_u, indexs_u) = unsup['xs'],unsup['ys'],unsup['id']
+        (images_u, targets_u, indexs_u) = unsup['xs'], unsup['ys'], unsup['id']
         # prepare data and targets
         if args.multiviews:
             images_u_w, images_u_w2, images_u_s, images_u_s2 = images_u
-            images_u_w = torch.cat([images_u_w.cuda(args.gpu, non_blocking=True), images_u_w2.cuda(args.gpu, non_blocking=True)], dim=0)
-            images_u_s = torch.cat([images_u_s.cuda(args.gpu, non_blocking=True), images_u_s2.cuda(args.gpu, non_blocking=True)], dim=0)
+            images_u_w = torch.cat(
+                [images_u_w.cuda(args.gpu, non_blocking=True), images_u_w2.cuda(args.gpu, non_blocking=True)], dim=0)
+            images_u_s = torch.cat(
+                [images_u_s.cuda(args.gpu, non_blocking=True), images_u_s2.cuda(args.gpu, non_blocking=True)], dim=0)
         else:
             images_u_w, images_u_s = images_u
 
@@ -574,7 +586,7 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
 
         targets_x = targets_x.cuda(args.gpu, non_blocking=True)
         targets_u = targets_u.cuda(args.gpu, non_blocking=True)
-        
+
         # warmup learning rate
         if epoch < args.warmup_epoch:
             warmup_step = args.warmup_epoch * len(train_loader_u)
@@ -613,10 +625,10 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
         # adaptive marginal loss
         delta_logits = torch.log(qhat)
         if args.multiviews:
-            logits_u_s1 = logits_u_s1 + args.tau*delta_logits
-            logits_u_s2 = logits_u_s2 + args.tau*delta_logits
+            logits_u_s1 = logits_u_s1 + args.tau * delta_logits
+            logits_u_s2 = logits_u_s2 + args.tau * delta_logits
         else:
-            logits_u_s = logits_u_s + args.tau*delta_logits
+            logits_u_s = logits_u_s + args.tau * delta_logits
 
         # loss for labeled samples
         loss_x = F.cross_entropy(logits_x, targets_x, reduction='mean')
@@ -630,15 +642,17 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
             logits_u_list = [logits_u_s1, logits_u_s2]
             for idx, targets_u in enumerate(pseudo_targets_list):
                 for logits_u in logits_u_list:
-                    loss_u += (F.cross_entropy(logits_u, targets_u, reduction='none', weight=per_cls_weights) * masks_list[idx]).mean()
-            loss_u = loss_u/(len(pseudo_targets_list)*len(logits_u_list))
+                    loss_u += (F.cross_entropy(logits_u, targets_u, reduction='none', weight=per_cls_weights) *
+                               masks_list[idx]).mean()
+            loss_u = loss_u / (len(pseudo_targets_list) * len(logits_u_list))
         else:
-            loss_u = (F.cross_entropy(logits_u_s, pseudo_targets_u, reduction='none', weight=per_cls_weights) * mask).mean()
-        
+            loss_u = (F.cross_entropy(logits_u_s, pseudo_targets_u, reduction='none',
+                                      weight=per_cls_weights) * mask).mean()
+
         if args.use_clip:
             # add clip's predictions
             indexs_u = indexs_u.cuda(args.gpu, non_blocking=True)
-            targets_u_clip = clip_preds_list[indexs_u][:,0].view(-1)
+            targets_u_clip = clip_preds_list[indexs_u][:, 0].view(-1)
             targets_u_clip = targets_u_clip.cuda(args.gpu, non_blocking=True)
             # add mask for clip with thresholding
             probs_list = clip_probs_list[indexs_u].cuda(args.gpu, non_blocking=True)
@@ -646,7 +660,9 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
             mask_clip = max_probs.ge(0.4).float()
             # apply clip predictions to low-confidence predictions
             mask_delta = (mask_clip - mask - mask1 - mask2).ge(0.01).float()
-            loss_u_clip = [F.cross_entropy(logits_u, targets_u_clip, reduction='none', weight=per_cls_weights) * mask_delta for logits_u in logits_u_list]
+            loss_u_clip = [
+                F.cross_entropy(logits_u, targets_u_clip, reduction='none', weight=per_cls_weights) * mask_delta for
+                logits_u in logits_u_list]
             loss_u = (torch.stack(loss_u_clip, dim=0).mean() + loss_u) / 2.0
 
         # CLD loss for unlabled samples (optional)
@@ -665,7 +681,7 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
             _, targets_u_ = torch.topk(pseudo_label, 1)
             targets_u_ = targets_u_.t()
             ps_vs_gt = targets_u_.eq(targets_u.view(1, -1).expand_as(targets_u_))
-            ps_vs_gt_all = (ps_vs_gt[0]*mask).view(-1).float().sum(0).mul_(100.0/mask.sum())
+            ps_vs_gt_all = (ps_vs_gt[0] * mask).view(-1).float().sum(0).mul_(100.0 / mask.sum())
             ps_vs_gt_correct.update(ps_vs_gt_all.item(), mask.sum())
 
         # measure accuracy and record loss
@@ -704,7 +720,7 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
 
         if i % args.print_freq == 0:
             progress.display(i)
-        
+
     if args.rank in [-1, 0]:
         writer.add_scalar('train/1.train_loss', losses.avg, epoch)
         writer.add_scalar('train/2.train_loss_x', losses_x.avg, epoch)
@@ -713,9 +729,8 @@ def train(train_loader_x, train_loader_u, model, optimizer, epoch, args, qhat=No
         writer.add_scalar('train/5.pseudo_vs_gt', ps_vs_gt_correct.avg, epoch)
         if args.CLDLoss:
             writer.add_scalar('train/7.train_loss_CLD', losses_cld.avg, epoch)
-    
-    return qhat
 
+    return qhat
 
 
 def imagenet(split='train'):
@@ -733,16 +748,15 @@ def imagenet(split='train'):
     ```
     """
     root = '/root/autodl-tmp/imagenet'
-    
+
     with open('imagenet-hc.json') as r:
         imagenet_hc = json.load(r)
         mapping = imagenet_hc['mapping']
         selection = set(imagenet_hc['selection'])
-    
-    hname_cls_map = {name:i for i,name in enumerate(sorted(set([mapping[k] for k in selection])))}
+
+    hname_cls_map = {name: i for i, name in enumerate(sorted(set([mapping[k] for k in selection])))}
     # hname_cls_map = {name:i for i,name in enumerate(sorted(set(mapping.values())))}
-    # print()
-    # print(max(hname_cls_map.values()))
+    print(max(hname_cls_map.values()))
     if split == 'train':
         file = Path(root).joinpath('train_cls.txt')
         train_root = os.path.join(root, 'train')
@@ -750,14 +764,14 @@ def imagenet(split='train'):
             lines = r.readlines()
             imgs = [line.split(' ')[0] for line in lines]
             imgs = [i for i in imgs if i.split('/')[0] in selection]
-            
+
             name_cls_map = {name: i for i, name in enumerate(sorted(set([i.split('/')[0] for i in imgs])))}
 
             xs = [os.path.join(train_root, f'{i}.JPEG') for i in imgs]
             ys = [name_cls_map[i.split('/')[0]] for i in imgs]
             cys = [hname_cls_map[mapping[i.split('/')[0]]] for i in imgs]
-            mask = [idx for idx,i in enumerate(imgs) if i.split('/')[0] in selection] 
-            
+            # mask = [idx for idx,i in enumerate(imgs) if i.split('/')[0] in selection]
+
     else:
         file = Path(root).joinpath('LOC_val_solution.csv')
         val_root = os.path.join(root, 'val')
@@ -770,28 +784,25 @@ def imagenet(split='train'):
             lines = [i for i in lines if i[1] in selection]
 
             name_cls_map = {name: i for i, name in enumerate(sorted(set([i[1] for i in lines])))}
-            
+
             xs = [os.path.join(val_root, f'{img}.JPEG') for img, _ in lines]
             ys = [name_cls_map[res] for _, res in lines]
             cys = [hname_cls_map[mapping[res]] for _, res in lines]
 
-            mask = [idx for idx,(_, i) in enumerate(lines) if i in selection] 
-            
-    xs = [xs[i] for i in mask]
-    ys = [ys[i] for i in mask]
-    cys = [cys[i] for i in mask]
-    print(len(xs),f'split={split}')
-    return list(xs), list(ys), list(cys)
+            # mask = [idx for idx,(_, i) in enumerate(lines) if i in selection]
 
+    # xs = [xs[i] for i in mask]
+    # ys = [ys[i] for i in mask]
+    # cys = [cys[i] for i in mask]
+    print(len(xs), f'split={split}')
+    return list(xs), list(ys), list(cys)
 
 
 def get_imagenet_ssl(image_root, trainindex_x, trainindex_u,
                      train_type='DefaultTrain', val_type='DefaultVal', weak_type='DefaultTrain',
-                     strong_type='RandAugment', multiviews=False):
-    
-    xs,ys,_ = imagenet('train')
-    exs,eys,_ = imagenet('val')
-
+                     strong_type='RandAugment', multiviews=False, sub_labels=False):
+    xs, ys, _ = imagenet('train')
+    exs, eys, _ = imagenet('val')
 
     traindir = os.path.join(image_root, 'train')
     valdir = os.path.join(image_root, 'val')
@@ -801,7 +812,8 @@ def get_imagenet_ssl(image_root, trainindex_x, trainindex_u,
     if multiviews:
         weak_transform2 = data_transforms.get_transforms(weak_type)
         strong_transform2 = data_transforms.get_transforms(strong_type)
-        transform_u = data_transforms.FourCropsTransform(weak_transform, weak_transform2, strong_transform, strong_transform2)
+        transform_u = data_transforms.FourCropsTransform(weak_transform, weak_transform2, strong_transform,
+                                                         strong_transform2)
     else:
         transform_u = data_transforms.TwoCropsTransform(weak_transform, strong_transform)
     transform_val = data_transforms.get_transforms(val_type)
@@ -812,38 +824,38 @@ def get_imagenet_ssl(image_root, trainindex_x, trainindex_u,
     train_dataset_u = datasets.ImageFolderWithIndex(
         traindir, trainindex_u, transform=transform_u)
 
-    
     train_dataset_x = (
         DatasetBuilder()
             .add_idx('id')
-            .add_input('xs', xs,transform=default_loader)
+            .add_input('xs', xs, transform=default_loader)
             .add_input('ys', ys)
-            .add_output('xs', 'xs',transform_x)
+            .add_output('xs', 'xs', transform_x)
             .add_output('ys', 'ys')
     )
 
     train_dataset_u = (
         DatasetBuilder()
             .add_idx('id')
-            .add_input('xs', xs,transform=default_loader)
+            .add_input('xs', xs, transform=default_loader)
             .add_input('ys', ys)
-            .add_output('xs', 'xs',transform_u)
+            .add_output('xs', 'xs', transform_u)
             .add_output('ys', 'ys')
     )
-    
+
     val_dataset = (
         DatasetBuilder()
             .add_idx('id')
-            .add_input('xs', exs,transform=default_loader)
+            .add_input('xs', exs, transform=default_loader)
             .add_input('ys', eys)
             .add_output('xs', 'xs', transform_val)
             .add_output('ys', 'ys')
     )
-    print('check train & val overlap:',set(eys)-set(ys))
-    annotation = json.load(open('annotation_1percent.json','r'))
-    train_dataset_x.subset(annotation['labeled_samples']*10)
-    train_dataset_u.subset(annotation['unlabeled_samples'])
-    print('dataset size',len(train_dataset_x),len(train_dataset_u),len(val_dataset))
+
+    if sub_labels:
+        annotation = json.load(open('annotation_1percent.json', 'r'))
+        train_dataset_x.subset(annotation['labeled_samples'] * 10)
+        train_dataset_u.subset(annotation['unlabeled_samples'])
+        print('dataset size', len(train_dataset_x), len(train_dataset_u), len(val_dataset))
     return train_dataset_x, train_dataset_u, val_dataset
 
 
@@ -873,7 +885,8 @@ def get_imagenet_ssl_random(image_root, percent, train_type='DefaultTrain',
     if multiviews:
         strong_transform2 = data_transforms.get_transforms(strong_type)
         strong_transform3 = data_transforms.get_transforms(strong_type)
-        transform_u = data_transforms.FourCropsTransform(weak_transform, strong_transform, strong_transform2, strong_transform3)
+        transform_u = data_transforms.FourCropsTransform(weak_transform, strong_transform, strong_transform2,
+                                                         strong_transform3)
     else:
         transform_u = data_transforms.TwoCropsTransform(weak_transform, strong_transform)
     transform_val = data_transforms.get_transforms(val_type)
@@ -891,7 +904,6 @@ def get_imagenet_ssl_random(image_root, percent, train_type='DefaultTrain',
 
     val_dataset = datasets.ImageFolder(
         valdir, transform=transform_val)
-    
 
     return train_dataset_x, train_dataset_u, val_dataset
 
@@ -900,6 +912,7 @@ def save_checkpoint(state, is_best, ckpt_path='', filename='checkpoint.pth.tar')
     torch.save(state, "{}/{}".format(ckpt_path, filename))
     if is_best:
         shutil.copyfile("{}/{}".format(ckpt_path, filename), "{}/{}".format(ckpt_path, "model_best.pth.tar"))
+
 
 if __name__ == '__main__':
     main()

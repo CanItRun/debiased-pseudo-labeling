@@ -1,5 +1,9 @@
 import shutil
 import torch
+from lumo import Logger
+
+logger = Logger()
+print = logger.raw
 
 
 def save_checkpoint(state, is_best, epoch, args, filename='checkpoint.pth.tar'):
@@ -32,6 +36,7 @@ def accuracy(output, target, topk=(1,)):
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
+
     def __init__(self, name, fmt=':f'):
         self.name = name
         self.fmt = fmt
@@ -73,6 +78,7 @@ class ProgressMeter(object):
 
 class InstantMeter(object):
     """Computes and stores the average and current value"""
+
     def __init__(self, name, fmt=':f'):
         self.name = name
         self.fmt = fmt

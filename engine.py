@@ -1,15 +1,20 @@
 import time
 from datetime import timedelta
-import faiss
+
 import numpy as np
 
 import torch
 import torch.nn as nn
 
 from utils import utils
+from lumo import Logger
+
+logger = Logger()
+print = logger.info
 
 
 def validate(val_loader, model, criterion, args):
+    import faiss
     batch_time = utils.AverageMeter('Time', ':6.3f')
     losses = utils.AverageMeter('Loss', ':.4e')
     top1 = utils.AverageMeter('Acc@1', ':6.2f')
@@ -24,7 +29,8 @@ def validate(val_loader, model, criterion, args):
 
     with torch.no_grad():
         end = time.time()
-        for i, (images, target) in enumerate(val_loader):
+        for i, data in enumerate(val_loader):
+            (images, target) = data['xs'], data['ys']
             if args.gpu is not None:
                 images = images.cuda(args.gpu, non_blocking=True)
             target = target.cuda(args.gpu, non_blocking=True)
@@ -57,7 +63,7 @@ def validate(val_loader, model, criterion, args):
                 progress.display(i)
 
         try:
-            num_classes = max(val_loader.dataset.labels)
+            num_classes = len(set(target_list.detach().cpu().tolist()))
         except:
             num_classes = max(val_loader.dataset.targets)
         acc = [0 for c in range(num_classes)]
@@ -71,6 +77,7 @@ def validate(val_loader, model, criterion, args):
 
 
 def ss_validate(val_loader_base, val_loader_query, model, args):
+    import faiss
     print("start KNN evaluation with key size={} and query size={}".format(
         len(val_loader_base.dataset.targets), len(val_loader_query.dataset.targets)))
     batch_time_key = utils.AverageMeter('Time', ':6.3f')
@@ -87,7 +94,8 @@ def ss_validate(val_loader_base, val_loader_query, model, args):
         start = time.time()
         end = time.time()
         # Memory features
-        for i, (images, target) in enumerate(val_loader_base):
+        for i, data in enumerate(val_loader_base):
+            (images, target) = data['xs'], data['ys']
             if args.gpu is not None:
                 images = images.cuda(args.gpu, non_blocking=True)
             target = target.cuda(args.gpu, non_blocking=True)
@@ -110,7 +118,8 @@ def ss_validate(val_loader_base, val_loader_query, model, args):
                     i, len(val_loader_base), batch_time=batch_time_key))
 
         end = time.time()
-        for i, (images, target) in enumerate(val_loader_query):
+        for i, data in enumerate(val_loader_query):
+            (images, target) = data['xs'], data['ys']
             if args.gpu is not None:
                 images = images.cuda(args.gpu, non_blocking=True)
             target = target.cuda(args.gpu, non_blocking=True)
